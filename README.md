@@ -17,7 +17,7 @@ HC_QuoteSystem is a browser-based health cover quote application. It allows user
 * Lifetime Health Cover (LHC) loading calculation
 * Quote preview and premium breakdown
 * SQLite database for storing quotes
-* Frontend connected to the existing REST API
+
 
 ## Requirements
 
