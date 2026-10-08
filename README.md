@@ -186,3 +186,7 @@ The suggestions were reviewed and tested before implementation. The final design
 * Quote calculations depend on the selected cover and applicant information.
 * Saved quotes are stored in the SQLite database.
 * The application must be running through the Node.js server for the frontend to communicate with the backend API.
+
+## Side Note
+I was working on the project locally and wasn't committing each change to GitHub during the development. Once the project was completed, I uploaded the final version to the repository.
+
