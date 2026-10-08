@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="HealthCover Quote System">
+    <title>HC_QuoteSystem</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="module">
+        import React from "https://esm.sh/react@19";
+        import { createRoot } from "https://esm.sh/react-dom/client";
+
+        const { useState } = React;
+
+        const HOSPITAL_COVER_PRICES = {
+            None: 0,
+            Basic: 90,
+            Bronze: 120,
+            Silver: 160,
+            Gold: 220
+        };
+        const EXTRA_COVER_PRICES = {
+            None: 0,
+            Basic: 25,
+            Standard: 45,
+            Premium: 70
+        };
+        const ANNUAL_PAYMENT_DISCOUNT = 0.10;
+
+        const formatCurrency = (amount) => new Intl.NumberFormat("en-AU", {
+            style: "currency",
+            currency: "AUD",
+            maximumFractionDigits: 0
+        }).format(amount);
+
+        const getAdultCount = (coverType) => coverType === "Single" ? 1 : coverType === "Couple" || coverType === "Family" ? 2 : 0;
+
+        const getLhcLoading = (age, hospitalHistory, hospitalCoverLevel) => {
+            if (hospitalCoverLevel === "None" || hospitalHistory !== "No" || age <= 30) return 0;
+            return Math.max(0, (age - 30) * 0.02);
+        };
+
+        const calculateQuotePremium = ({ coverType, applicantAges, hospitalCoverLevel, extraCoverLevel, hospitalHistory, paymentFrequency }) => {
+            const adultCount = getAdultCount(coverType);
+            const applicantCount = Math.min(applicantAges.length, adultCount);
+            const hospitalPrices = applicantAges.slice(0, applicantCount).map((age) => {
+                const loading = getLhcLoading(age, hospitalHistory, hospitalCoverLevel);
+                return HOSPITAL_COVER_PRICES[hospitalCoverLevel] * (1 + loading);
+            });
+            const hospitalTotal = hospitalPrices.reduce((total, price) => total + price, 0);
+            const extrasTotal = EXTRA_COVER_PRICES[extraCoverLevel] * adultCount;
+            const familyFee = coverType === "Family" ? 30 : 0;
+            const monthlyPremium = hospitalTotal + extrasTotal + familyFee;
+            const yearlyBeforeDiscount = monthlyPremium * 12;
+            const yearlyAfterDiscount = paymentFrequency === "Yearly"
+                ? yearlyBeforeDiscount * (1 - ANNUAL_PAYMENT_DISCOUNT)
+                : yearlyBeforeDiscount;
+            const loadingByApplicant = applicantAges.slice(0, applicantCount).map((age, index) => ({
+                applicant: index + 1,
+                age,
+                loading: getLhcLoading(age, hospitalHistory, hospitalCoverLevel)
+            }));
+
+            return {
+                adultCount,
+                hospitalTotal,
+                extrasTotal,
+                familyFee,
+                monthlyPremium,
+                yearlyBeforeDiscount,
+                yearlyAfterDiscount,
+                loadingByApplicant
+            };
+        };
+
+        const TopBar = () => React.createElement(
+            "header",
+            { className: "top-bar" },
+            React.createElement("a", { className: "brand", href: "#" }, "QuoteSystem")
+        );
+
+        const QuoteSystem = () => {
+            const [quotes, setQuotes] = useState([
+                { id: 1, name: "Rayan", coverType: "Single", hospitalCover: "Gold", extraCover: "Premium", paymentFrequency: "Monthly", paymentLabel: "Monthly", paymentAmount: 0 },
+                { id: 2, name: "Brandiddy", coverType: "Couple", hospitalCover: "Silver", extraCover: "Standard", paymentFrequency: "Yearly", paymentLabel: "Yearly", paymentAmount: 0 },
+                { id: 3, name: "Jose Gose", coverType: "Family", hospitalCover: "Bronze", extraCover: "Basic", paymentFrequency: "Monthly", paymentLabel: "Monthly", paymentAmount: 0 }
+            ]);
+            const [isFormOpen, setIsFormOpen] = useState(false);
+            const [customerName, setCustomerName] = useState("");
+            const [coverType, setCoverType] = useState("Single");
+            const [applicant1Age, setApplicant1Age] = useState("");
+            const [applicant2Age, setApplicant2Age] = useState("");
+            const [applicant3Age, setApplicant3Age] = useState("");
+            const [applicant4Age, setApplicant4Age] = useState("");
+            const [showApplicant3, setShowApplicant3] = useState(false);
+            const [showApplicant4, setShowApplicant4] = useState(false);
+            const [hospitalHistory, setHospitalHistory] = useState("");
+            const [hospitalCoverLevel, setHospitalCoverLevel] = useState("");
+            const [extraCoverLevel, setExtraCoverLevel] = useState("");
+            const [paymentFrequency, setPaymentFrequency] = useState("");
+            const [notes, setNotes] = useState("");
+            const [errorMessage, setErrorMessage] = useState("");
+
+            const resetForm = () => {
+                setCustomerName("");
+                setCoverType("Single");
+                setApplicant1Age("");
+                setApplicant2Age("");
+                setApplicant3Age("");
+                setApplicant4Age("");
+                setShowApplicant3(false);
+                setShowApplicant4(false);
+                setHospitalHistory("");
+                setHospitalCoverLevel("");
+                setExtraCoverLevel("");
+                setPaymentFrequency("");
+                setNotes("");
+                setErrorMessage("");
+            };
+
+            const closeForm = () => {
+                setIsFormOpen(false);
+                setErrorMessage("");
+            };
+
+            const formatDateInput = (value) => {
+                const digits = value.replace(/\D/g, "").slice(0, 8);
+                if (digits.length <= 2) return digits;
+                if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+                return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+            };
+
+            const getAge = (dateValue) => {
+                if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dateValue)) return null;
+                const [day, month, year] = dateValue.split("/").map(Number);
+                const birthDate = new Date(year, month - 1, day);
+                if (birthDate.getFullYear() !== year || birthDate.getMonth() !== month - 1 || birthDate.getDate() !== day) return null;
+
+                const today = new Date();
+                let age = today.getFullYear() - year;
+                const monthDifference = today.getMonth() - birthDate.getMonth();
+                if (monthDifference < 0 || (monthDifference === 0 && today.getDate() < birthDate.getDate())) age -= 1;
+                return age;
+            };
+
+            const isValidAge = (dateValue) => {
+                const age = getAge(dateValue);
+                return age !== null && age >= 18 && age <= 100;
+            };
+
+            const applicantAges = [applicant1Age, applicant2Age, applicant3Age, applicant4Age]
+                .slice(0, getAdultCount(coverType))
+                .map(getAge)
+                .filter((age) => age !== null);
+
+            const premium = calculateQuotePremium({
+                coverType,
+                applicantAges,
+                hospitalCoverLevel,
+                extraCoverLevel,
+                hospitalHistory,
+                paymentFrequency
+            });
+
+            const lhcWarnings = premium.loadingByApplicant.filter((item) => {
+                return hospitalHistory === "Not sure" && hospitalCoverLevel !== "None";
+            }).map((item) => `Applicant ${item.applicant}: Cover history is unknown — LHC loading has not been applied. This quote may be inaccurate.`);
+
+            const addQuote = (event) => {
+                event.preventDefault();
+
+                const form = event.currentTarget || document.querySelector(".quote-form");
+                const formCustomerName = form?.querySelector("#customer-name")?.value ?? customerName;
+                const formCoverType = form?.querySelector("#cover-type")?.value ?? coverType;
+                const formApplicant1Age = form?.querySelector("#applicant-1-age")?.value ?? applicant1Age;
+                const formApplicant2Age = form?.querySelector("#applicant-2-age")?.value ?? applicant2Age;
+                const formApplicant3Age = form?.querySelector("#applicant-3-age")?.value ?? applicant3Age;
+                const formApplicant4Age = form?.querySelector("#applicant-4-age")?.value ?? applicant4Age;
+                const formHospitalHistory = form?.querySelector("#hospital-history")?.value ?? hospitalHistory;
+                const formHospitalCoverLevel = form?.querySelector("#hospital-cover-level")?.value ?? hospitalCoverLevel;
+                const formExtraCoverLevel = form?.querySelector("#extra-cover-level")?.value ?? extraCoverLevel;
+                const formPaymentFrequency = form?.querySelector("#payment-frequency")?.value ?? paymentFrequency;
+                const formNotes = form?.querySelector("#notes")?.value ?? notes;
+
+                const activeCoverType = formCoverType || coverType;
+                const activeApplicant1Age = formApplicant1Age || applicant1Age;
+                const activeApplicant2Age = formApplicant2Age || applicant2Age;
+                const activeApplicant3Age = formApplicant3Age || applicant3Age;
+                const activeApplicant4Age = formApplicant4Age || applicant4Age;
+                const activeHospitalHistory = formHospitalHistory || hospitalHistory;
+                const activeHospitalCoverLevel = formHospitalCoverLevel || hospitalCoverLevel;
+                const activeExtraCoverLevel = formExtraCoverLevel || extraCoverLevel;
+                const activePaymentFrequency = formPaymentFrequency || paymentFrequency;
+                const activeNotes = formNotes || notes;
+
+                const activeApplicantAges = [activeApplicant1Age, activeApplicant2Age, activeApplicant3Age, activeApplicant4Age]
+                    .slice(0, getAdultCount(activeCoverType))
+                    .map(getAge)
+                    .filter((age) => age !== null);
+
+                const activePremium = calculateQuotePremium({
+                    coverType: activeCoverType,
+                    applicantAges: activeApplicantAges,
+                    hospitalCoverLevel: activeHospitalCoverLevel,
+                    extraCoverLevel: activeExtraCoverLevel,
+                    hospitalHistory: activeHospitalHistory,
+                    paymentFrequency: activePaymentFrequency
+                });
+
+                if (!formCustomerName.trim()) {
+                    setErrorMessage("Please enter the customer name.");
+                    return;
+                }
+                if (!isValidAge(activeApplicant1Age)) {
+                    setErrorMessage("Applicant 1 age must be a valid date of birth between 18 and 100 years old.");
+                    return;
+                }
+                if ((activeCoverType === "Couple" || activeCoverType === "Family") && !isValidAge(activeApplicant2Age)) {
+                    setErrorMessage("Applicant 2 age must be a valid date of birth between 18 and 100 years old.");
+                    return;
+                }
+                if (activeCoverType === "Family" && showApplicant3 && !isValidAge(activeApplicant3Age)) {
+                    setErrorMessage("Applicant 3 age must be a valid date of birth between 18 and 100 years old.");
+                    return;
+                }
+                if (activeCoverType === "Family" && showApplicant4 && !isValidAge(activeApplicant4Age)) {
+                    setErrorMessage("Applicant 4 age must be a valid date of birth between 18 and 100 years old.");
+                    return;
+                }
+                if (!activeHospitalHistory || !activeHospitalCoverLevel || !activeExtraCoverLevel || !activePaymentFrequency) {
+                    setErrorMessage("Please complete every required field.");
+                    return;
+                }
+
+                const newQuote = {
+                    id: Date.now(),
+                    name: formCustomerName.trim(),
+                    coverType: activeCoverType,
+                    hospitalCover: activeHospitalCoverLevel,
+                    extraCover: activeExtraCoverLevel,
+                    paymentFrequency: activePaymentFrequency,
+                    applicant1Age: activeApplicant1Age,
+                    applicant2Age: activeCoverType === "Single" ? "" : activeApplicant2Age,
+                    applicant3Age: activeCoverType === "Family" && showApplicant3 ? activeApplicant3Age : "",
+                    applicant4Age: activeCoverType === "Family" && showApplicant4 ? activeApplicant4Age : "",
+                    hospitalHistory: activeHospitalHistory,
+                    paymentAmount: activePaymentFrequency === "Yearly" ? activePremium.yearlyAfterDiscount : activePremium.monthlyPremium,
+                    paymentLabel: activePaymentFrequency === "Yearly" ? "Yearly" : "Monthly",
+                    notes: activeNotes.trim()
+                };
+
+                setQuotes((currentQuotes) => [...currentQuotes, newQuote]);
+                resetForm();
+                setIsFormOpen(false);
+            };
+
+            const makeField = (labelText, id, children) => React.createElement(
+                "div",
+                { className: "field-group" },
+                React.createElement("label", { htmlFor: id }, labelText),
+                children
+            );
+
+            const selectOptions = (...options) => options.map((option) =>
+                React.createElement("option", { key: option, value: option }, option)
+            );
+
+            const makeFamilyApplicantControls = (applicantNumber, isShown, setIsShown, age, setAge) => React.createElement(
+                "div",
+                { className: "family-applicant-row" },
+                isShown && makeField(`Applicant ${applicantNumber} Age`, `applicant-${applicantNumber}-age`, React.createElement("input", {
+                    id: `applicant-${applicantNumber}-age`,
+                    type: "text",
+                    inputMode: "numeric",
+                    value: age,
+                    onChange: (event) => setAge(formatDateInput(event.target.value)),
+                    placeholder: "DD/MM/YYYY",
+                    required: true
+                })),
+                React.createElement(
+                    "div",
+                    { className: "family-controls family-controls-right" },
+                    React.createElement(
+                        "button",
+                        {
+                            className: "family-plus",
+                            type: "button",
+                            disabled: isShown,
+                            onClick: () => setIsShown(true),
+                            "aria-label": `Add Applicant ${applicantNumber}`
+                        },
+                        "+"
+                    ),
+                    React.createElement(
+                        "button",
+                        {
+                            className: "family-minus",
+                            type: "button",
+                            disabled: !isShown,
+                            onClick: () => {
+                                setIsShown(false);
+                                setAge("");
+                            },
+                            "aria-label": `Remove Applicant ${applicantNumber}`
+                        },
+                        "−"
+                    )
+                )
+            );
+
+            return React.createElement(
+                "section",
+                { className: "quotes-section", id: "quotes" },
+                React.createElement(
+                    "div",
+                    { className: "section-heading" },
+                    React.createElement("div", null, React.createElement("h2", null, "Customer quotes")),
+                    React.createElement(
+                        "button",
+                        { className: "add-quote-button", type: "button", onClick: () => { setIsFormOpen(true); setErrorMessage(""); } },
+                        "Add quote"
+                    )
+                ),
+                isFormOpen && React.createElement(
+                    "div",
+                    { className: "modal-backdrop", role: "presentation", onMouseDown: (event) => { if (event.target === event.currentTarget) closeForm(); } },
+                    React.createElement(
+                        "div",
+                        { className: "quote-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "quote-modal-title" },
+                        React.createElement(
+                            "div",
+                            { className: "modal-header" },
+                            React.createElement("div", null, React.createElement("p", { className: "modal-eyebrow" }, "New quote"), React.createElement("h3", { id: "quote-modal-title" }, "Add a customer quote")),
+                            React.createElement("button", { className: "modal-close", type: "button", onClick: closeForm, "aria-label": "Close" }, "×")
+                        ),
+                        React.createElement(
+                            "form",
+                            { className: "quote-form", onSubmit: (event) => {
+                                event.preventDefault();
+                                addQuote(event);
+                            } },
+                            React.createElement(
+                                "div",
+                                { className: "form-grid" },
+                                makeField("Customer Name", "customer-name", React.createElement("input", {
+                                    id: "customer-name",
+                                    type: "text",
+                                    value: customerName,
+                                    onChange: (event) => setCustomerName(event.target.value),
+                                    placeholder: "Enter customer name",
+                                    required: true
+                                })),
+                                makeField("Cover type", "cover-type", React.createElement("select", {
+                                    id: "cover-type",
+                                    className: "select-control",
+                                    value: coverType,
+                                    onChange: (event) => {
+                                        const nextCoverType = event.target.value;
+                                        setCoverType(nextCoverType);
+                                        if (nextCoverType !== "Family") {
+                                            setApplicant2Age("");
+                                            setApplicant3Age("");
+                                            setApplicant4Age("");
+                                            setShowApplicant3(false);
+                                            setShowApplicant4(false);
+                                        }
+                                    },
+                                    required: true
+                                }, selectOptions("Single", "Couple", "Family"))),
+                                makeField("Applicant 1 Age", "applicant-1-age", React.createElement("input", {
+                                    id: "applicant-1-age",
+                                    type: "text",
+                                    inputMode: "numeric",
+                                    value: applicant1Age,
+                                    onChange: (event) => setApplicant1Age(formatDateInput(event.target.value)),
+                                    placeholder: "DD/MM/YYYY",
+                                    required: true
+                                })),
+                                (coverType === "Couple" || coverType === "Family") && makeField("Applicant 2 Age", "applicant-2-age", React.createElement("input", {
+                                    id: "applicant-2-age",
+                                    type: "text",
+                                    inputMode: "numeric",
+                                    value: applicant2Age,
+                                    onChange: (event) => setApplicant2Age(formatDateInput(event.target.value)),
+                                    placeholder: "DD/MM/YYYY",
+                                    required: true
+                                })),
+                                coverType === "Family" && makeFamilyApplicantControls(
+                                    3,
+                                    showApplicant3,
+                                    setShowApplicant3,
+                                    applicant3Age,
+                                    setApplicant3Age
+                                ),
+                                coverType === "Family" && makeFamilyApplicantControls(
+                                    4,
+                                    showApplicant4,
+                                    setShowApplicant4,
+                                    applicant4Age,
+                                    setApplicant4Age
+                                ),
+                                makeField("Hospital cover history", "hospital-history", React.createElement("select", {
+                                    id: "hospital-history",
+                                    className: "select-control",
+                                    value: hospitalHistory,
+                                    onChange: (event) => setHospitalHistory(event.target.value),
+                                    required: true
+                                }, React.createElement("option", { value: "", disabled: true }, "Select an option"), selectOptions("Yes", "No", "Not sure"))),
+                                makeField("Hospital Cover Level", "hospital-cover-level", React.createElement("select", {
+                                    id: "hospital-cover-level",
+                                    className: "select-control",
+                                    value: hospitalCoverLevel,
+                                    onChange: (event) => setHospitalCoverLevel(event.target.value),
+                                    required: true
+                                }, React.createElement("option", { value: "", disabled: true }, "Select a level"), selectOptions("None", "Basic", "Bronze", "Silver", "Gold"))),
+                                makeField("Extra Cover Level", "extra-cover-level", React.createElement("select", {
+                                    id: "extra-cover-level",
+                                    className: "select-control",
+                                    value: extraCoverLevel,
+                                    onChange: (event) => setExtraCoverLevel(event.target.value),
+                                    required: true
+                                }, React.createElement("option", { value: "", disabled: true }, "Select a level"), selectOptions("None", "Basic", "Standard", "Premium"))),
+                                makeField("Payment Frequency", "payment-frequency", React.createElement("select", {
+                                    id: "payment-frequency",
+                                    className: "select-control",
+                                    value: paymentFrequency,
+                                    onChange: (event) => setPaymentFrequency(event.target.value),
+                                    required: true
+                                }, React.createElement("option", { value: "", disabled: true }, "Select frequency"), selectOptions("Monthly", "Yearly"))),
+                                paymentFrequency === "Yearly" && React.createElement("small", { className: "discount-note" }, "10% annual discount applied"),
+                                makeField("Notes", "notes", React.createElement("textarea", {
+                                    id: "notes",
+                                    value: notes,
+                                    onChange: (event) => setNotes(event.target.value),
+                                    placeholder: "Optional notes",
+                                    rows: 3
+                                }))
+                            ),
+                            errorMessage && React.createElement("p", { className: "form-error", role: "alert" }, errorMessage),
+                            React.createElement(
+                                "section",
+                                { className: "price-tab", "aria-label": "Current quote price" },
+                                React.createElement("h4", null, "Current quote price"),
+                                React.createElement(
+                                    "div",
+                                    { className: "price-breakdown" },
+                                    React.createElement("div", { className: "price-line" }, React.createElement("span", null, "Hospital total"), React.createElement("strong", null, formatCurrency(premium.hospitalTotal))),
+                                    React.createElement("div", { className: "price-line" }, React.createElement("span", null, "Extras total"), React.createElement("strong", null, formatCurrency(premium.extrasTotal))),
+                                    React.createElement("div", { className: "price-line" }, React.createElement("span", null, "Family fee"), React.createElement("strong", null, formatCurrency(premium.familyFee)))
+                                ),
+                                React.createElement(
+                                    "div",
+                                    { className: "price-total" },
+                                    React.createElement("span", null, paymentFrequency === "Yearly" ? "Yearly after discount" : "Monthly premium"),
+                                    React.createElement("strong", null, formatCurrency(paymentFrequency === "Yearly" ? premium.yearlyAfterDiscount : premium.monthlyPremium))
+                                ),
+                                React.createElement(
+                                    "p",
+                                    { className: "price-note" },
+                                    "Lifetime Health Cover loading applies only to hospital cover. It does not apply to extras cover. Hospital and extras are calculated separately; Family adds a $30 monthly fee."
+                                ),
+                                lhcWarnings.length > 0 && React.createElement("p", { className: "price-warning" }, lhcWarnings.join(" "))
+                            ),
+                            React.createElement(
+                                "div",
+                                { className: "modal-actions" },
+                                React.createElement("button", { className: "cancel-button", type: "button", onClick: closeForm }, "Cancel"),
+                                React.createElement("button", { className: "save-button", type: "submit" }, "Save quote")
+                            )
+                        )
+                    )
+                ),
+                React.createElement(
+                    "div",
+                    { className: "table-wrap" },
+                    React.createElement(
+                        "table",
+                        { className: "quote-table" },
+                        React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Name"), React.createElement("th", null, "Cover type"), React.createElement("th", null, "Hospital cover"), React.createElement("th", null, "Extra cover"), React.createElement("th", null, "Payment frequency"), React.createElement("th", null, "Payment"))),
+                        React.createElement("tbody", null, quotes.map((quote) => React.createElement("tr", { key: quote.id }, React.createElement("td", null, quote.name), React.createElement("td", null, quote.coverType), React.createElement("td", null, quote.hospitalCover), React.createElement("td", null, quote.extraCover), React.createElement("td", null, quote.paymentLabel || quote.paymentFrequency), React.createElement("td", null, formatCurrency(quote.paymentAmount || 0)))))
+                    )
+                )
+            );
+        };
+
+        const App = () => React.createElement(
+            React.Fragment,
+            null,
+            React.createElement(TopBar),
+            React.createElement("main", { className: "page-content" }, React.createElement(QuoteSystem))
+        );
+
+        createRoot(document.getElementById("root")).render(React.createElement(App));
+    </script>
+</body>
+</html>
