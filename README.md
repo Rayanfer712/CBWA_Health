@@ -178,7 +178,7 @@ It was used for:
 5. Brainstorming validation and testing cases.
 6. Improving README wording and project documentation.
 
-The suggestions were reviewed and tested before implementation. The final frontend design and implementation decisions were made by me.
+The suggestions were reviewed and tested before implementation. The final design and implementation decisions were made by me.
 
 
 
